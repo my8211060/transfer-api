@@ -54,10 +54,16 @@ npm install && npx wrangler deploy
 
 ### 4. 添加 Cloudflare Secret
 
-在 Worker 设置里添加 Secret：
+在 Worker 设置里添加上游 key：
 
 ```text
 UNLIMITED_SURF_API_KEY=<你的 unlimited.surf key>
+```
+
+推荐再添加一个客户端访问 key，用来保护你的 Worker：
+
+```text
+WORKER_API_KEY=<你自定义的调用密钥>
 ```
 
 通常位置是：
@@ -67,6 +73,8 @@ Workers & Pages -> 你的 Worker -> Settings -> Variables -> Secrets
 ```
 
 请只把 key 放到 Secret 里，不要写进 `wrangler.toml`、`README.md` 或任何 GitHub 文件。
+
+如果设置了 `WORKER_API_KEY`，客户端调用 Worker 时必须传这个 key。如果没有设置 `WORKER_API_KEY`，Worker 会保持兼容模式，客户端传任意 key 都可以，真正请求上游时使用 `UNLIMITED_SURF_API_KEY`。
 
 ### 5. 部署后验证
 
@@ -78,16 +86,25 @@ https://<your-worker>.workers.dev/health
 
 看到 JSON 里有 `"ok": true` 即表示 Worker 正常运行。
 
+如果已经设置 `WORKER_API_KEY`，验证请求也需要带上它：
+
+```bash
+curl https://<your-worker>.workers.dev/health \
+  -H "Authorization: Bearer <你的 WORKER_API_KEY>"
+```
+
 测试 OpenAI 模型列表：
 
 ```bash
-curl https://<your-worker>.workers.dev/v1/models
+curl https://<your-worker>.workers.dev/v1/models \
+  -H "Authorization: Bearer <你的 WORKER_API_KEY>"
 ```
 
 测试 Anthropic/Agent 配置说明：
 
 ```bash
-curl https://<your-worker>.workers.dev/v1/setup
+curl https://<your-worker>.workers.dev/v1/setup \
+  -H "Authorization: Bearer <你的 WORKER_API_KEY>"
 ```
 
 ## 本地 Wrangler 手动部署
@@ -98,10 +115,44 @@ curl https://<your-worker>.workers.dev/v1/setup
 npm install -g wrangler
 wrangler login
 wrangler secret put UNLIMITED_SURF_API_KEY
+wrangler secret put WORKER_API_KEY
 wrangler deploy
 ```
 
-`wrangler secret put` 时输入你的 unlimited.surf key。也可以不配置 Secret，而是在每次请求里传：`Authorization: Bearer <key>` 或 `x-api-key: <key>`。
+`UNLIMITED_SURF_API_KEY` 填 unlimited.surf 的真实 key。`WORKER_API_KEY` 填你自定义给客户端使用的 key。
+
+`WORKER_API_KEY` 是可选的：如果不设置，客户端可以传任意 key；如果设置了，客户端必须传这个 key。也可以不配置 `UNLIMITED_SURF_API_KEY`，改为每次请求直接传 unlimited.surf key，但不推荐这样做。
+
+## 调用时使用哪个 key
+
+推荐配置两个 Secret：
+
+```text
+UNLIMITED_SURF_API_KEY=<你的 unlimited.surf key>
+WORKER_API_KEY=<你自定义的客户端 key>
+```
+
+客户端调用时使用 `WORKER_API_KEY`，不要直接暴露 unlimited.surf key：
+
+```bash
+curl https://<your-worker>.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer <你的 WORKER_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gateway-gpt-5","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+规则如下：
+
+```text
+设置了 WORKER_API_KEY:
+  客户端必须传 WORKER_API_KEY
+  Worker 使用 UNLIMITED_SURF_API_KEY 请求 unlimited.surf
+
+没有设置 WORKER_API_KEY:
+  客户端传任意 key 都可以
+  Worker 优先使用 UNLIMITED_SURF_API_KEY 请求 unlimited.surf
+  如果也没有 UNLIMITED_SURF_API_KEY，则把客户端传入的 key 当作 unlimited.surf key
+```
 
 ## OpenAI 兼容接口
 
@@ -127,7 +178,7 @@ https://<your-worker>.workers.dev/v1
 
 ```bash
 curl https://<your-worker>.workers.dev/v1/chat/completions \
-  -H "Authorization: Bearer <key>" \
+  -H "Authorization: Bearer <你的 WORKER_API_KEY 或 unlimited.surf key>" \
   -H "Content-Type: application/json" \
   -d '{"model":"gateway-gpt-5","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
@@ -152,8 +203,8 @@ Claude Code PowerShell 示例：
 
 ```powershell
 $env:ANTHROPIC_BASE_URL = "https://<your-worker>.workers.dev"
-$env:ANTHROPIC_AUTH_TOKEN = "<key>"
-$env:ANTHROPIC_API_KEY = "<key>"
+$env:ANTHROPIC_AUTH_TOKEN = "<你的 WORKER_API_KEY 或 unlimited.surf key>"
+$env:ANTHROPIC_API_KEY = "<你的 WORKER_API_KEY 或 unlimited.surf key>"
 $env:ANTHROPIC_MODEL = "claude-opus-4-7-20260101"
 claude
 ```
@@ -228,10 +279,16 @@ npm install && npx wrangler deploy
 
 ### 4. Add the Cloudflare Secret
 
-Add this secret in the Worker settings:
+Add the upstream key in the Worker settings:
 
 ```text
 UNLIMITED_SURF_API_KEY=<your unlimited.surf key>
+```
+
+Recommended: add a client-facing key to protect the Worker:
+
+```text
+WORKER_API_KEY=<your custom client key>
 ```
 
 The usual location is:
@@ -240,7 +297,9 @@ The usual location is:
 Workers & Pages -> your Worker -> Settings -> Variables -> Secrets
 ```
 
-Keep the key in Secrets only. Do not put it in `wrangler.toml`, `README.md`, or GitHub files.
+Keep keys in Secrets only. Do not put them in `wrangler.toml`, `README.md`, or GitHub files.
+
+If `WORKER_API_KEY` is set, clients must send that key when calling the Worker. If `WORKER_API_KEY` is not set, the Worker keeps compatibility mode and accepts any client key while using `UNLIMITED_SURF_API_KEY` for upstream requests.
 
 ### 5. Verify the deployment
 
@@ -252,16 +311,25 @@ https://<your-worker>.workers.dev/health
 
 You should see JSON with `"ok": true`.
 
+If `WORKER_API_KEY` is set, include it in verification requests too:
+
+```bash
+curl https://<your-worker>.workers.dev/health \
+  -H "Authorization: Bearer <your WORKER_API_KEY>"
+```
+
 Test OpenAI-compatible models:
 
 ```bash
-curl https://<your-worker>.workers.dev/v1/models
+curl https://<your-worker>.workers.dev/v1/models \
+  -H "Authorization: Bearer <your WORKER_API_KEY>"
 ```
 
 Test Anthropic/agent setup docs:
 
 ```bash
-curl https://<your-worker>.workers.dev/v1/setup
+curl https://<your-worker>.workers.dev/v1/setup \
+  -H "Authorization: Bearer <your WORKER_API_KEY>"
 ```
 
 ## Manual deploy with Wrangler
@@ -272,10 +340,44 @@ You can also deploy from your local machine:
 npm install -g wrangler
 wrangler login
 wrangler secret put UNLIMITED_SURF_API_KEY
+wrangler secret put WORKER_API_KEY
 wrangler deploy
 ```
 
-Enter your unlimited.surf key when `wrangler secret put` prompts for it. You can also skip the secret and pass a key per request with `Authorization: Bearer <key>` or `x-api-key: <key>`.
+Use your real unlimited.surf key for `UNLIMITED_SURF_API_KEY`. Use your own client-facing key for `WORKER_API_KEY`.
+
+`WORKER_API_KEY` is optional. If it is not set, clients may send any key. If it is set, clients must send this exact key. You can also skip `UNLIMITED_SURF_API_KEY` and pass the real unlimited.surf key on every request, but that is not recommended.
+
+## Which key should clients use?
+
+Recommended setup:
+
+```text
+UNLIMITED_SURF_API_KEY=<your unlimited.surf key>
+WORKER_API_KEY=<your custom client key>
+```
+
+Clients should use `WORKER_API_KEY`, not the upstream unlimited.surf key:
+
+```bash
+curl https://<your-worker>.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer <your WORKER_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gateway-gpt-5","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Rules:
+
+```text
+WORKER_API_KEY is set:
+  clients must send WORKER_API_KEY
+  Worker uses UNLIMITED_SURF_API_KEY for unlimited.surf
+
+WORKER_API_KEY is not set:
+  clients may send any key
+  Worker prefers UNLIMITED_SURF_API_KEY for unlimited.surf
+  if UNLIMITED_SURF_API_KEY is also missing, the client key is treated as the unlimited.surf key
+```
 
 ## OpenAI-compatible routes
 
@@ -301,7 +403,7 @@ Example:
 
 ```bash
 curl https://<your-worker>.workers.dev/v1/chat/completions \
-  -H "Authorization: Bearer <key>" \
+  -H "Authorization: Bearer <your WORKER_API_KEY or unlimited.surf key>" \
   -H "Content-Type: application/json" \
   -d '{"model":"gateway-gpt-5","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
@@ -326,8 +428,8 @@ Claude Code PowerShell example:
 
 ```powershell
 $env:ANTHROPIC_BASE_URL = "https://<your-worker>.workers.dev"
-$env:ANTHROPIC_AUTH_TOKEN = "<key>"
-$env:ANTHROPIC_API_KEY = "<key>"
+$env:ANTHROPIC_AUTH_TOKEN = "<your WORKER_API_KEY or unlimited.surf key>"
+$env:ANTHROPIC_API_KEY = "<your WORKER_API_KEY or unlimited.surf key>"
 $env:ANTHROPIC_MODEL = "claude-opus-4-7-20260101"
 claude
 ```
